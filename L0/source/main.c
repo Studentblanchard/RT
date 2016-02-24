@@ -41,13 +41,13 @@ typedef struct {
 typedef struct {
   tea_type_t tea_type;
   char *tea_name;
-  uint16_t brew_time;// in seconds
+  uint32_t brew_time;// in seconds
 } tea_t;
 
 typedef struct {
   timer_type_t type;
   int duration;// in milliseconds
-  uint16_t start;
+  uint32_t start;
 } timer_t;
 
 typedef struct {
@@ -66,7 +66,7 @@ return_code_t selection_state(void);
 return_code_t ready_state(void);
 return_code_t readtime_state(void);
 button_type_t read_button(void);
-void to_mm_ss(uint16_t seconds);
+void to_mm_ss(uint32_t seconds);
 state_code_t get_next_state(return_code_t rc, state_code_t cur_state);
 
 /* Prototypes */
@@ -91,9 +91,9 @@ transition_t state_trans[] = {
 };
 
 tea_t tea_instructions[] = {
-  { BLACK, "Black Tea", 180 },
-  { EARLGREY, "Earl Grey", 300 },
-  { FRUIT, "Fruit Tea", 480 },
+  { BLACK, "Black Tea", 180000 },
+  { EARLGREY, "Earl Grey", 300000 },
+  { FRUIT, "Fruit Tea", 480000 },
   { CUSTOM, "Custom", 0 }
 };
 
@@ -120,9 +120,9 @@ static const int NUM_STATE = 8;
 static const int THRESHOLD = 5000;
 
 static const int HYST_MIN = 0;
-static const int HYST_LOW = 2;
-static const int HYST_HIGH = 8;
-static const int HYST_MAX = 10;
+static const int HYST_LOW = 1;
+static const int HYST_HIGH = 4;
+static const int HYST_MAX = 5;
 
 static const int LOW = 10;
 static const int HIGH = 100;
@@ -180,6 +180,7 @@ int main(void){
 /* The State Functions */
 
 return_code_t menu_state(){
+  reset_buttons();
   for(;;){
     LCD_puts(tea_instructions[selected_tea].tea_name, 0);
     count_hysterisis();
@@ -203,6 +204,7 @@ return_code_t menu_state(){
 }
 
 return_code_t selection_state(){
+  reset_buttons();
   for(;;){
     to_mm_ss(tea_instructions[selected_tea].brew_time);
     count_hysterisis();
@@ -217,14 +219,15 @@ return_code_t selection_state(){
 }
 
 return_code_t countdown_state(){
+  reset_buttons();
   click_type_t click = NONE;
   button_type_t button = NONE_;
   int double_click_timer = 50;//play around with this value
 
-  int remaining_time = timers[TEATIMER].duration;
+  uint32_t remaining_time = tea_instructions[selected_tea].brew_time;
 
   for(;;){
-    to_mm_ss(remaining_time / 1000);
+    to_mm_ss(remaining_time);
     count_hysterisis();
 
     button = read_button();
@@ -250,12 +253,13 @@ return_code_t countdown_state(){
       return OK;
 
     _delay_ms(10);
-    remaining_time -= 10;
+    remaining_time -= 100;
 
   }
 }
 
 return_code_t ready_state(){
+  reset_buttons();
   notify();
   LCD_puts("Your tea is ready", 1);
   _delay_ms(5000);
@@ -263,6 +267,7 @@ return_code_t ready_state(){
 }
 
 return_code_t readtime_state(){
+  reset_buttons();
   uint16_t delta_time = 0;
   int secondary_hysterisis = 0;
 
@@ -299,25 +304,34 @@ return_code_t readtime_state(){
 
 /* Button Functions */
 
+void reset_buttons(){
+    buttons[C_BUTTON].hysterisis = 0;
+    buttons[D_BUTTON].hysterisis = 0;
+    buttons[U_BUTTON].hysterisis = 0;
+    buttons[C_BUTTON].state = NONE;
+    buttons[D_BUTTON].state = NONE;
+    buttons[U_BUTTON].state = NONE;
+}
+
 button_type_t read_button(){
   if(buttons[C_BUTTON].state == SINGLE)/* or double */
   {
     buttons[C_BUTTON].hysterisis = 0;
-    buttons[C_BUTTON].state = NONE_;
+    buttons[C_BUTTON].state = NONE;
     return CENTER;
   }
 
   if(buttons[D_BUTTON].state == SINGLE)/* or double */
   {
     buttons[D_BUTTON].hysterisis = 0;
-    buttons[D_BUTTON].state = NONE_;
+    buttons[D_BUTTON].state = NONE;
     return DOWN;
   }
 
   if(buttons[U_BUTTON].state == SINGLE)/* or double */
   {
     buttons[U_BUTTON].hysterisis = 0;
-    buttons[U_BUTTON].state = NONE_;
+    buttons[U_BUTTON].state = NONE;
     return UP;
   }
 
@@ -385,9 +399,9 @@ state_code_t get_next_state(return_code_t rc, state_code_t cur_state){
   return 0;
 }
 
-void to_mm_ss(uint16_t seconds){
+void to_mm_ss(uint32_t mseconds){
   char buffer[8];
-  sprintf(buffer, "%02u %02u", (uint16_t) (seconds / 60), (uint16_t) (seconds % 60));
+  sprintf(buffer, "%02u %02u", (uint32_t) (mseconds / (uint32_t) 60000), (uint32_t) (mseconds % (uint32_t) 60000)/1000);
   LCD_puts(buffer, 0);
 }
 
