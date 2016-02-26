@@ -272,13 +272,13 @@ return_code_t ready_state(){
 
 return_code_t readtime_state(){
   reset_buttons();
-  uint16_t delta_time = 0;
+  uint32_t delta_time = 0;
   int secondary_hysterisis = 0;
 
   speed = LOW;
 
   for(;;){
-      to_mm_ss(delta_time / 1000);
+      to_mm_ss(delta_time);
       count_hysterisis();
 
       if(speed == LOW && secondary_hysterisis >= 500)
