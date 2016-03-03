@@ -1,8 +1,6 @@
 /* Name: main.c
- * Author: Kiral Poon
- * Copyright: All copyright belongs to author
- * License:  normal public license
- * Freq_ref: http://www.phy.mtu.edu/~suits/notefreqs.html
+ * Author: Trevor Blanchard
+ * Course: Real time systems COMP 4550
  */
 
 #include <avr/io.h>
@@ -14,15 +12,13 @@
 #include <stdio.h>
 #include <inttypes.h>
 
-typedef enum { E_LOW, F, G, A, B, C, D, E_HIGH } NOTE;
+typedef enum { E_LOW, F, G, A, B, C, D, E_HIGH, NA } NOTE;
 
-NOTE twinkle[42] = { C, C, G, G, A, A, G, F, F, E_LOW, E_LOW, D, D, C, G, G, F, F, E_LOW, E_LOW, D, G, G, F, F, E_LOW, E_LOW, D, C, C, G, G, A, A, G, F, F, E_LOW, E_LOW, D, D, C };
+NOTE twinkle[48] = { C, C, G, G, A, A, G, NA, F, F, E_LOW, E_LOW, D, D, C, NA, G, G, F, F, E_LOW, E_LOW, D, NA, G, G, F, F, E_LOW, E_LOW, D, NA, C, C, G, G, A, A, G, NA, F, F, E_LOW, E_LOW, D, D, C, NA };
 
 int InitButterfly( void );
 int InitSound( void );
-#define beat 160 //default 500
 #define volume 400 //default 500
-
 #define attack 100 //milliseconds
 #define decay 50 //milliseconds
 #define release 50 //milliseconds
@@ -64,6 +60,7 @@ noSound(void)
   _delay_ms(50);
   return 0;
 }
+
 void my_delay_ms(int ms)
 {
   while (0 < ms)
@@ -71,33 +68,6 @@ void my_delay_ms(int ms)
     _delay_ms(1);
     --ms;
   }
-}
-int
-mute(int duration)
-{
-  OCR1A = 0;
-  duration= duration * beat;
-  my_delay_ms(duration);
-  return 0;
-}
-int
-not_mute(int duration)
-{
-  OCR1A = volume;
-  duration= duration * beat;
-  my_delay_ms(duration);
-  noSound();
-  return 0;
-}
-
-int
-tone(uint16_t key)
-{
-  ICR1 = key;
-  OCR1A = volume;
-  _delay_ms(beat);
-  noSound();
-  return 0;
 }
 
 int
@@ -113,20 +83,24 @@ int
 play_note_adsr(uint16_t key, uint16_t duration, uint16_t uvolume)
 {
   ICR1 = key;
+  if(key == NA){
+    noSound(duration);
+    return 0;
+  }
   OCR1A = 0;
   int i = 0;
 
-  while(i < attack){
+  while(i++ < attack){
     OCR1A += 6;
     _delay_ms(1);
-    i++;
+    //i++;
   }
 
   i = 0;
-  while(i < decay){
+  while(i++ < decay){
     OCR1A -= 4;
     _delay_ms(1);
-    i++;
+    //i++;
   }
 
   i = 0;
@@ -165,7 +139,7 @@ int main(void)
   LCD_puts(buffer, 0);
   int i;
 
-  for(i = 0; i < 42; i++){
+  for(i = 0; i < 48; i++){
     play_note_adsr(notes[twinkle[i]], 1000, volume);
   }
   return 0;   /* never reached */
