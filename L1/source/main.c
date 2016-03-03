@@ -1,6 +1,8 @@
 /* Name: main.c
- * Author: Trevor Blanchard
- * Course: Real time systems COMP 4550
+ * Author: Kiral Poon
+ * Copyright: All copyright belongs to author
+ * License:  normal public license
+ * Freq_ref: http://www.phy.mtu.edu/~suits/notefreqs.html
  */
 
 #include <avr/io.h>
@@ -14,15 +16,27 @@
 
 typedef enum { E_LOW, F, G, A, B, C, D, E_HIGH, NA } NOTE;
 
+typedef enum {ATTACK, DECAY, SUSTAIN, RELEASE} ADSR_STATE;
+
+ADSR_STATE cur_state;
+
 NOTE twinkle[48] = { C, C, G, G, A, A, G, NA, F, F, E_LOW, E_LOW, D, D, C, NA, G, G, F, F, E_LOW, E_LOW, D, NA, G, G, F, F, E_LOW, E_LOW, D, NA, C, C, G, G, A, A, G, NA, F, F, E_LOW, E_LOW, D, D, C, NA };
+
 
 int InitButterfly( void );
 int InitSound( void );
-#define volume 400 //default 500
-#define attack 100 //milliseconds
-#define decay 50 //milliseconds
-#define release 50 //milliseconds
-#define peak 600 //volume that we reach between attack and decay
+
+#define TOP 255
+
+int duration[4] = { 150, 50, 1500, 50 };
+int step[4] = { 4, -4, 0 , 8 };
+
+float tickspeed = 0.512f;
+
+int num_rollovers = 0;
+int final_set = 0;
+
+volatile uint16_t rollover;
 
 int
 InitButterfly( void )
@@ -33,6 +47,43 @@ InitButterfly( void )
   DIDR0 = 0x00;
   DIDR1 = 0x00;
   return 0;
+}
+
+int
+stay(){
+  uint16_t tmp;
+  cli();
+  tmp = rollover;
+  sei();
+
+  if(tmp >= num_rollovers+1)
+    return 0;
+
+  return 1;
+}
+
+ISR( TIMER0_COMP_vect ) {
+    rollover++;
+    if(rollover == num_rollovers)
+      OCR0A = final_set;
+}
+
+int InitCTCTimer0( uint8_t preScalar, uint8_t duration ) {
+    uint8_t const preScalarMask = ~( ( 1 << CS02 ) | ( 1 << CS01 ) | ( 1 << CS00 ) );
+    uint8_t const wgmMask = ~( ( 1 << WGM01 ) | ( 1 << WGM00 ) );
+    uint8_t const ocMask = ~ ( ( 1 << COM0A1 ) | ( 1 << COM0A0 ) );
+    uint8_t const ieMask = ~ ( ( 1 << TOIE0 ) | ( 1 << OCIE0A ) );
+    uint8_t const ifMask = ~ ( ( 1 << TOV0 ) | ( 1 << OCF0A ) );
+
+    uint8_t const wgMode = ( ( 1<<WGM01)|(0<<WGM00) );
+
+    TCCR0A = ( TCCR0A & ( preScalarMask & wgmMask & ocMask ) ) | ( preScalar | wgMode );
+
+    TCNT0 = 0;
+    OCR0A = duration;
+    TIFR0 = ( TIFR0 & ifMask ) | ( ( 1 << OCF0A ) ) ;
+    TIMSK0 = ( TIMSK0 & ieMask ) | ( ( 1 << OCIE0A ) );
+    return 0;
 }
 
 int
@@ -53,12 +104,21 @@ InitSound( void )
   return 0;
 }
 
-int
-noSound(void)
-{
-  OCR1A = 0;
-  _delay_ms(50);
-  return 0;
+void calculate_timer(int ms){
+  OCR0A = TOP;
+  cli();
+  rollover = 0;
+  sei();
+  int tmp = (float)ms / tickspeed;
+  num_rollovers = tmp / TOP;
+  final_set = tmp % TOP;
+  if(final_set == 0)
+  {
+    final_set = TOP;
+    num_rollovers -= 1;
+  }
+  if(num_rollovers == 0)
+    OCR0A = final_set;
 }
 
 void my_delay_ms(int ms)
@@ -70,50 +130,6 @@ void my_delay_ms(int ms)
   }
 }
 
-int
-play_note(uint16_t key, uint16_t duration, uint16_t uvolume)
-{
-  ICR1 = key;
-  OCR1A = uvolume;
-  _delay_ms(duration);
-  return 0;
-}
-
-int
-play_note_adsr(uint16_t key, uint16_t duration, uint16_t uvolume)
-{
-  ICR1 = key;
-  if(key == NA){
-    noSound(duration);
-    return 0;
-  }
-  OCR1A = 0;
-  int i = 0;
-
-  while(i++ < attack){
-    OCR1A += 6;
-    _delay_ms(1);
-    //i++;
-  }
-
-  i = 0;
-  while(i++ < decay){
-    OCR1A -= 4;
-    _delay_ms(1);
-    //i++;
-  }
-
-  i = 0;
-  _delay_ms(duration - (attack + decay + release));
-
-  while(i < release){
-    OCR1A -= 8;
-    _delay_ms(1);
-    i++;
-  }
-  return 0;
-}
-
 #define E_329 ( (uint16_t) ( 2000000UL / (329UL*2) ) )
 #define F_349 ( (uint16_t) ( 2000000UL / (349UL*2) ) )
 #define G_392 ( (uint16_t) ( 2000000UL / (392UL*2) ) )
@@ -123,24 +139,61 @@ play_note_adsr(uint16_t key, uint16_t duration, uint16_t uvolume)
 #define D_587 ( (uint16_t) ( 2000000UL / (587UL*2) ) )
 #define E_659 ( (uint16_t) ( 2000000UL / (659UL*2) ) )
 
-uint16_t notes[8] = { E_329, F_349, G_392, A_440, B_494, C_523, D_587, E_659 };
+uint16_t notes[8] = { E_329, F_349, G_392, A_440, B_494, C_523, D_587, E_659, 0 };
+
+void play_adsr_part(int step){
+  while(stay())
+  {
+    OCR1A += step;
+    _delay_ms(1);
+  }
+}
+
+void play_mute(){
+  OCR1A = 0;
+  while(stay())
+    _delay_ms(1);
+}
+
+int
+playsong(NOTE *melody){
+  cur_state = ATTACK;
+  int noteindex = 0;
+  NOTE cur_note = melody[0];
+
+  for(;;){
+    calculate_timer(duration[cur_state]);
+    ICR1 = notes[cur_note];
+
+    if(cur_note == NA)
+      play_mute();
+    else
+      play_adsr_part(step[cur_state]);
+
+    //cur_state = (cur_state + 1) % 4;
+    if((cur_state = (cur_state + 1) % 4) == ATTACK)//
+    {
+      OCR1A = 0;
+      cur_note = melody[++noteindex % 48];
+    }
+  }
+}
 
 int main(void)
 {
   cli();
   InitButterfly();
+  InitCTCTimer0( ( ( 1 << CS02 ) | ( 0 << CS02 ) | ( 1 << CS02 ) ) /* Prescalar 1024 */, 0 );
   LCD_Init();
   InitSound();
   sei();
 
   /* insert your hardware initialization here */
   char buffer[16];
-  snprintf(buffer, sizeof(buffer), "ICR1: %d", A_440);
-  LCD_puts(buffer, 0);
+  snprintf(buffer, sizeof(buffer), "Twinkle Twinkle Little Star");
+  LCD_puts(buffer, 1);
   int i;
 
-  for(i = 0; i < 48; i++){
-    play_note_adsr(notes[twinkle[i]], 1000, volume);
-  }
+  playsong(twinkle);
   return 0;   /* never reached */
 }
