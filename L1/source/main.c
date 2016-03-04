@@ -1,9 +1,8 @@
-/* Name: main.c
- * Author: Kiral Poon
- * Copyright: All copyright belongs to author
- * License:  normal public license
- * Freq_ref: http://www.phy.mtu.edu/~suits/notefreqs.html
- */
+/* Trevor Blanchard
+** Real time systems
+** Lab 2
+** March 4, 2016
+*/
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
