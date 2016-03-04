@@ -11,18 +11,45 @@
 
 #include <stdio.h>
 #include <inttypes.h>
+#include <setjmp.h>
 
 typedef enum { E_LOW, F, G, A, B, C, D, E_HIGH, NA } NOTE;
+typedef enum { RUNNING, KILLED, WAITING, DONE, NEW } TASK_STATE;
+typedef enum { CD, PN, CB } TASK;
 
 NOTE twinkle[48] = { C, C, G, G, A, A, G, NA, F, F, E_LOW, E_LOW, D, D, C, NA, G, G, F, F, E_LOW, E_LOW, D, NA, G, G, F, F, E_LOW, E_LOW, D, NA, C, C, G, G, A, A, G, NA, F, F, E_LOW, E_LOW, D, D, C, NA };
 
 int InitButterfly( void );
 int InitSound( void );
+
+void yeild(void);
+
+void countdown(void);
+void play_note_adsr(void);
+void check_buttons(void);
+
 #define volume 400 //default 500
 #define attack 100 //milliseconds
 #define decay 50 //milliseconds
 #define release 50 //milliseconds
+#define duration 1000
+#define HYST_MAX 12
+#define HYST_MIN 0
 #define peak 600 //volume that we reach between attack and decay
+
+typedef struct TCB {
+  TASK_STATE state;
+  void (*task)(void);
+  jmp_buf jb;
+} TaskControlBlock;
+
+void (*tasks[])(void) = { countdown, play_note_adsr, check_buttons };
+int currentTask;
+int currentNote;
+int song_length = 48;
+TaskControlBlock tcbs[4];
+
+jmp_buf task_controller_jb;
 
 int
 InitButterfly( void )
@@ -53,12 +80,14 @@ InitSound( void )
   return 0;
 }
 
-int
-noSound(void)
+void my_yeild_ms(int ms)
 {
-  OCR1A = 0;
-  _delay_ms(50);
-  return 0;
+  while (0 < ms)
+  {
+    _delay_ms(1);
+    yeild();
+    --ms;
+  }
 }
 
 void my_delay_ms(int ms)
@@ -70,48 +99,141 @@ void my_delay_ms(int ms)
   }
 }
 
-int
-play_note(uint16_t key, uint16_t duration, uint16_t uvolume)
+void
+play_note_adsr()
 {
-  ICR1 = key;
-  OCR1A = uvolume;
-  _delay_ms(duration);
-  return 0;
+  currentNote = 0;
+  for(;;){
+	ICR1 = twinkle[currentNote];
+	OCR1A = 500;
+	int i = 0;
+        my_yeild_ms(duration);
+	/*
+	while(i++ < attack){
+		OCR1A += 6;
+		yeild();
+	}
+
+	i = 0;
+	while(i++ < decay){
+		OCR1A -= 4;
+		yeild();
+	}
+
+	my_yeild_ms(duration - (attack + decay + release));
+
+	i = 0;
+	while(i++ < release){
+		OCR1A -= 8;
+		yeild();
+	}*/
+        currentNote = (currentNote + 1) % song_length;
+  }
+  return;
 }
 
-int
-play_note_adsr(uint16_t key, uint16_t duration, uint16_t uvolume)
-{
-  ICR1 = key;
-  if(key == NA){
-    noSound(duration);
-    return 0;
-  }
-  OCR1A = 0;
-  int i = 0;
+int hys[5] = { 0, 0, 0, 0, 0 }; 
 
-  while(i++ < attack){
-    OCR1A += 6;
-    _delay_ms(1);
-    //i++;
-  }
+void adjust_hysterisis(int btn){
+   if(btn == -1)
+   {
+     int j;
+     for(j = 0 ; j < 5 ; j++)
+       if(hys[j] > 0) hys[j]--;
+     return;
+   }
 
-  i = 0;
-  while(i++ < decay){
-    OCR1A -= 4;
-    _delay_ms(1);
-    //i++;
-  }
+   hys[btn]++;
 
-  i = 0;
-  _delay_ms(duration - (attack + decay + release));
+   if(hys[btn] > HYST_MAX) hys[btn] = HYST_MAX;
+ 
+   int i;
+   for(i = 1; i < 5; i++){
+     int y = (btn+i) % 5;
+     hys[y] --;
+     if(hys[y] < HYST_MIN) hys[y] = HYST_MIN;
+   }
+}
 
-  while(i < release){
-    OCR1A -= 8;
-    _delay_ms(1);
-    i++;
+void check_buttons(){
+  for(;;){
+    int btn = -1;
+    if(!(PINB & (1 << PB4))){//center
+      btn = 0;
+    }else if(!(PINB & (1 << PB6))){//up
+      btn = 1;
+    }else if(!(PINB & (1 << PB7))){//down
+      btn = 2;
+    }else if(!(PINE & (1 << PE2))){//left
+      btn = 3;
+    }else if(!(PINE & (1 << PE3))){//right
+      btn = 4;
+    }
+    adjust_hysterisis(btn);
+    yeild();  
   }
-  return 0;
+}
+
+void countdown(){
+  for(;;){
+    char buffer[16];
+    if(hys[0] > 10)
+    	sprintf(buffer, "%s\n", "center" );
+    if(hys[1] > 10)
+    	sprintf(buffer, "%s\n", "up" );
+    if(hys[2] > 10)
+    	sprintf(buffer, "%s\n", "down" );
+    if(hys[3] > 10)
+    	sprintf(buffer, "%s\n", "left" );
+    if(hys[4] > 10)	
+    	sprintf(buffer, "%s\n", "right" );
+    LCD_puts(buffer, 1);
+    yeild();
+  }
+}
+
+void yeild(){
+  if(setjmp(tcbs[currentTask].jb) == 0){
+    longjmp(task_controller_jb, 1);
+  }
+}
+
+uint8_t entry(void (*func)(void)){
+  uint8_t stack[1000];
+  stack[1000-1] = 12;
+  func();
+  return stack;
+}
+
+void schedule(void (*task)(void), int taskno){
+  tcbs[taskno].state = NEW;
+  tcbs[taskno].task = task;
+}
+
+void task_controller(){
+  currentTask = 0;
+
+  if(setjmp(task_controller_jb) == 0)
+  {
+    tcbs[currentTask].state = RUNNING;
+    entry(tcbs[currentTask].task);
+  }else{
+    if(tcbs[currentTask].state == DONE){
+      schedule(tasks[currentTask], currentTask);
+    }
+
+    tcbs[currentTask].state = WAITING;
+
+    currentTask++;
+
+    if(tcbs[currentTask].state == NEW){
+       tcbs[currentTask].state = RUNNING;
+       entry(tcbs[currentTask].task);
+    }else{
+       tcbs[currentTask].state = RUNNING;
+       longjmp(tcbs[currentTask].jb, 1);
+    }
+  }
 }
 
 #define E_329 ( (uint16_t) ( 2000000UL / (329UL*2) ) )
@@ -123,7 +245,7 @@ play_note_adsr(uint16_t key, uint16_t duration, uint16_t uvolume)
 #define D_587 ( (uint16_t) ( 2000000UL / (587UL*2) ) )
 #define E_659 ( (uint16_t) ( 2000000UL / (659UL*2) ) )
 
-uint16_t notes[8] = { E_329, F_349, G_392, A_440, B_494, C_523, D_587, E_659 };
+uint16_t notes[9] = { E_329, F_349, G_392, A_440, B_494, C_523, D_587, E_659, 0 };
 
 int main(void)
 {
@@ -133,14 +255,11 @@ int main(void)
   InitSound();
   sei();
 
-  /* insert your hardware initialization here */
-  char buffer[16];
-  snprintf(buffer, sizeof(buffer), "ICR1: %d", A_440);
-  LCD_puts(buffer, 0);
-  int i;
+  schedule(play_note_adsr,0);
+  schedule(countdown,1);
+  schedule(check_buttons,2);
 
-  for(i = 0; i < 48; i++){
-    play_note_adsr(notes[twinkle[i]], 1000, volume);
-  }
+  task_controller();
+
   return 0;   /* never reached */
 }
