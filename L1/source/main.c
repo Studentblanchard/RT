@@ -34,6 +34,8 @@ void check_buttons(void);
 #define release 50 //milliseconds
 #define duration 1000
 #define HYST_MAX 12
+#define HYST_HIGH 10
+#define HYST_LOW 2
 #define HYST_MIN 0
 #define peak 600 //volume that we reach between attack and decay
 
@@ -94,7 +96,7 @@ void my_delay_ms(int ms)
 {
   while (0 < ms)
   {
-    _delay_ms(1);
+    _delay_ms(10);
     --ms;
   }
 }
@@ -177,15 +179,15 @@ void check_buttons(){
 void countdown(){
   for(;;){
     char buffer[16];
-    if(hys[0] > 10)
+    if(hys[0] > HYST_HIGH)
     	sprintf(buffer, "%s\n", "center" );
-    if(hys[1] > 10)
+    if(hys[1] > HYST_HIGH)
     	sprintf(buffer, "%s\n", "up" );
-    if(hys[2] > 10)
+    if(hys[2] > HYST_HIGH)
     	sprintf(buffer, "%s\n", "down" );
-    if(hys[3] > 10)
+    if(hys[3] > HYST_HIGH)
     	sprintf(buffer, "%s\n", "left" );
-    if(hys[4] > 10)	
+    if(hys[4] > HYST_HIGH)	
     	sprintf(buffer, "%s\n", "right" );
     LCD_puts(buffer, 1);
     yeild();
