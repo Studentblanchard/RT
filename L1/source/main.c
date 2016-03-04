@@ -107,8 +107,8 @@ play_note_adsr()
   currentNote = 0;
   for(;;){
 	ICR1 = twinkle[currentNote];
-	OCR1A = 500;
-	int i = 0;
+	OCR1A = 250;
+	//int i = 0;
         my_yeild_ms(duration);
 	/*
 	while(i++ < attack){
@@ -135,31 +135,27 @@ play_note_adsr()
 }
 
 int hys[5] = { 0, 0, 0, 0, 0 }; 
+int j, i, y;
 
 void adjust_hysterisis(int btn){
    if(btn == -1)
    {
-     int j;
      for(j = 0 ; j < 5 ; j++)
        if(hys[j] > 0) hys[j]--;
      return;
    }
 
-   hys[btn]++;
+   if(hys[btn] < HYST_MAX) hys[btn]++;
 
-   if(hys[btn] > HYST_MAX) hys[btn] = HYST_MAX;
- 
-   int i;
-   for(i = 1; i < 5; i++){
-     int y = (btn+i) % 5;
-     hys[y] --;
-     if(hys[y] < HYST_MIN) hys[y] = HYST_MIN;
-   }
+   for(i = 1; i < 5; i++)
+     if(hys[btn + i] > HYST_MIN) hys[btn + i]--;
 }
+
+int btn;
 
 void check_buttons(){
   for(;;){
-    int btn = -1;
+    btn = -1;
     if(!(PINB & (1 << PB4))){//center
       btn = 0;
     }else if(!(PINB & (1 << PB6))){//up
@@ -176,9 +172,10 @@ void check_buttons(){
   }
 }
 
+char buffer[16];
+
 void countdown(){
   for(;;){
-    char buffer[16];
     if(hys[0] > HYST_HIGH)
     	sprintf(buffer, "%s\n", "center" );
     if(hys[1] > HYST_HIGH)
@@ -201,8 +198,8 @@ void yeild(){
 }
 
 uint8_t entry(void (*func)(void)){
-  uint8_t stack[1000];
-  stack[1000-1] = 12;
+  uint8_t stack[100];
+  stack[100-1] = 12;
   func();
   return stack;
 }
@@ -226,7 +223,7 @@ void task_controller(){
 
     tcbs[currentTask].state = WAITING;
 
-    currentTask++;
+    currentTask = (currentTask + 1) % 3;
 
     if(tcbs[currentTask].state == NEW){
        tcbs[currentTask].state = RUNNING;
