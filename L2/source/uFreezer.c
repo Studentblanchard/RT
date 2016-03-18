@@ -14,8 +14,10 @@ uint8_t currentTask = -1;
 
 void 
 initKernel( void ){
-
-
+  currentTask = -1;
+  int i;
+  for( i = 0 ; i < MAX_TASKS ; i++ )
+    TCB[i].state = INVALID;
 }
 
 uint8_t 

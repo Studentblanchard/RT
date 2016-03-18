@@ -25,8 +25,13 @@ ISR(TIMER0_OVF_vect, ISR_NAKED) {
     currentTask = (currentTask + 1) % MAX_TASKS;
   }
 
-  while(TCB{currentTask].state != READY ){
+  uint8_t tmp = currentTask;
+  uint8_t pri = HIGH_PRIORITY;
+
+  while( TCB[currentTask].state != READY && TCB[currentTask].priority != pri ){
     currentTask = (currentTask + 1) % MAX_TASKS;
+    if(currentTask == tmp)
+      pri = LOW_PRIORITY;
   }
 
   SP = TCB[currentTask].stackPtr;

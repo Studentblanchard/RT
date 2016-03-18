@@ -8,14 +8,9 @@
 #include <inttypes.h>
 #include "uFreezer.h"
 
-struct Wait {
-  struct TaskControlBlock * task;
-  struct Wait * next;
-};
-
 struct Semaphore {
   int8_t count;
-  struct Wait * waiting;
+  struct TaskControlBlock * waiting;
 };
 
 void

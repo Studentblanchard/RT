@@ -11,22 +11,34 @@ void InitSemaphore(struct Semaphore * sem, int8_t n) {
 
 uint8_t
 waitSemaphore(struct Semaphore * sem) {
+ 
+  cli();
+  
+  if(sem->count > 0)
+    return --(sem->count);
+  else if (sem->count < 0)
+    return sem->count;
 
-  //base case, the semaphore is available, decrement and return
-  if(sem->count-- > 0) return 0;
+  sei();
+  
+  sem->waiting = &TCB[currentTask];
+  sem->waiting->state = WAIT_SEMAPHORE;
+ 
+  while(sem->count == 0)
+    _delay_ms(1);
 
-  //return 0 if avail
-  //
-  //
-  //otherwise put this thread on the wait queue
-  //it will be signaled when the semaphore is avail
-  //in this case we return -1
-  //
-  //any other value signals an error
+  return 0;
 }
 
 void 
 releaseSemaphore(struct Semaphore * sem) {
-  //add the the sem
-  //????signal the next task?????
+  cli();
+  
+  sem->count = 1;
+  if(sem->waiting != NULL)
+    sem->waiting->state = READY;
+
+  sem->waiting = NULL;
+  
+  sei();
 }
