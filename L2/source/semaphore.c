@@ -4,6 +4,11 @@
 
 #include "semaphore.h"
 #include <inttypes.h>
+#include <avr/interrupt.h>
+#include <util/delay.h>
+
+extern struct TaskControlBlock TCB[MAX_TASKS];
+extern currentTask;
 
 void InitSemaphore(struct Semaphore * sem, int8_t n) {
   sem->count = n;
@@ -35,10 +40,10 @@ releaseSemaphore(struct Semaphore * sem) {
   cli();
   
   sem->count = 1;
-  if(sem->waiting != NULL)
+  if(sem->waiting != 0)
     sem->waiting->state = READY;
 
-  sem->waiting = NULL;
+  sem->waiting = 0;
   
   sei();
 }
