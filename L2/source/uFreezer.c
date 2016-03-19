@@ -3,7 +3,11 @@
  * A Pre-emptive OS kernel
  *
  */
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <util/delay.h>
 
+#include <stdio.h>
 #include <inttypes.h>
 #include "uFreezer.h"
 #include "stack.h"
@@ -21,7 +25,7 @@ initKernel( void ){
 }
 
 uint8_t 
-startTask( void (*func) ( void * data ), uint16_t stackSize ){
+startTask( void (*task) ( void ), uint16_t stackSize ){
   uint16_t oldstack;
   uint8_t i;
 

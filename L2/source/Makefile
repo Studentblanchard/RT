@@ -38,19 +38,11 @@ HEADERS = $(TARGET).h
 SRC += bcd.c \
 lcd_functions.c \
 lcd_driver.c \
-stack.c \
-hardware.c \
-uFreezer.c \
-semaphore.c \
 
 # ***** ADDITIONAL HEADER FILES GO HERE *****
 HEADERS += bcd.h \
 lcd_functions.h \
 lcd_driver.h \
-hardware.h \
-stack.h \
-uFreezer.h \
-semaphore.h \
 
 # MCU name
 MCU = atmega169

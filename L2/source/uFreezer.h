@@ -21,20 +21,20 @@ enum TASK_STATE {
   READY = 0,
   RUNNING = 1,
   WAIT_TICKS = 2,
-  WAIT_SEMA = 3
+  WAIT_SEMAPHORE = 3
 };
 
 enum TASK_PRIORITY {
-  LOW = 0,
-  HIGH = 1
+  LOW_PRIORITY = 0,
+  HIGH_PRIORITY = 1
 };
 
 /* Function prototypes
  */
 
-void initKernel(void);
-uint8_t startTask( void (*func)(void * data), uint16_t stackSize);
-void stopTask();
+void initKernel( void );
+uint8_t startTask( void ( *func )( void ), uint16_t stackSize);
+void stopTask( void );
 void sleep( uint16_t systicks );
 
 /* Structs
@@ -43,6 +43,7 @@ void sleep( uint16_t systicks );
 struct TaskControlBlock {
   uint8_t state;
   uint16_t stackPtr;
+  uint8_t priority;
 };
 
 #endif
