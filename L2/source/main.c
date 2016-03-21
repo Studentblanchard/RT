@@ -136,6 +136,7 @@ semaphore lcd_sem;
 
 /**********************
 *  IMPLEMENTATIONS (in sections)
+*  - Button
 *  - System Ticks
 *  - Stack
 *  - Hardware
@@ -385,7 +386,6 @@ ReleaseSemaphore( semaphore * sem ) {
     sem->waiting = 0;
   }
   sei();
-
 }
 
 /**********************
@@ -451,13 +451,13 @@ StartTask( void ( * task ) ( void ), uint16_t stackSize, uint8_t priority ) {
 
       oldstack = SP;
       SP = ( uint16_t ) ( &stacks[i] ) + STACK_SIZE;
-      
+
       asm volatile( "\t push %0\n"
 		    "\t push %1\n" 
 		    :
 		    : "r" ( ( uint8_t ) ( ( ( uint16_t ) task ) ) ),
 		    "r" ( ( uint8_t ) ( ( ( uint16_t ) task ) >> 8 ) ) );
-      
+
       PushState();
       TCB[i].stackPtr = SP;
       SP = oldstack;
@@ -596,7 +596,7 @@ int main(void) {
     //StartTask( & idleTask, STACK_SIZE, IDLE_PRIORITY );
     //StartTask( & buttonTask, STACK_SIZE, LOW_PRIORITY );
     //StartTask( & lcdTask, STACK_SIZE, LOW_PRIORITY );
-	//StartTask( & melodyTask, STACK_SIZE, HIGH_PRIORITY );
+    //StartTask( & melodyTask, STACK_SIZE, HIGH_PRIORITY );
     InitSemaphore( &lcd_sem, 1 );
     sei();
     uint16_t tmp1;
