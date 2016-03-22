@@ -1,4 +1,14 @@
-Current State is unknown
-The code has been unscrambled but has not been tested.
+Trevor Blanchard
+March 21, 2016
+Student number 7662553
 
+Lab 3 Pre-emptive OS
+
+All functions are working properly.
+
+Single click toggles the sound and a doulbe click returns to the boot loader.
+
+I created a third priority for the idle task so that it will only run if all the other tasks are waiting or blocked.
+
+I increased the clock speed to 2Mhz to help with the task switching logic.
 

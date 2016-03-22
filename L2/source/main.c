@@ -13,26 +13,20 @@
 
 /**********************
 *  STRUCTS
-*  - Wait
 *  - Semaphore
 *  - TaskControlBlock
 *  
 **********************/
 
-typedef struct Wait {
-  uint16_t ticks;
-  uint16_t rollover;
-} wait;
-
 typedef struct TaskControlBlock {
   uint8_t state;
   uint16_t stackPtr;
   uint8_t priority;
-  wait * wait;
+  uint16_t wait_ticks;
 } tcb;
 
 typedef struct Semaphore {
-  int8_t count;
+  volatile int8_t count;
   tcb * waiting;
 } semaphore;
 
@@ -71,6 +65,7 @@ enum BUTTON_CLICK {
 
 #define MAX_TASKS (8)
 #define STACK_SIZE (96)
+#define SYSTICKS_BASE (217)
 
 /**********************
 *  PROTOTYPES
@@ -111,9 +106,11 @@ uint16_t GetSysTicks( void );
 void GetSysTicksWait( void );
 uint8_t getClick( void );
 int InitButtons( void );
-
+uint8_t IncTicks( void );
+void SwitchTask( void );
 void dummy1( void );
 void dummy2( void );
+uint16_t GetSysTicks( void );
 
 /**********************
 *  VARIABLES
@@ -128,14 +125,13 @@ uint8_t stacks[MAX_TASKS][STACK_SIZE];
 volatile tcb TCB[MAX_TASKS];
 uint8_t currentTask = -1;
 volatile uint16_t systicks = 0;
-volatile uint16_t systicks_rollover = 0;
 volatile uint16_t systicks_50hz = 0;
-volatile uint16_t systicks_50hz_rollover = 0;
-volatile wait systicks_wait;
 semaphore lcd_sem;
+int hyst = 0;
 
 /**********************
 *  IMPLEMENTATIONS (in sections)
+*  - Button
 *  - System Ticks
 *  - Stack
 *  - Hardware
@@ -151,16 +147,53 @@ semaphore lcd_sem;
 * -------BUTTON--------
 **********************/
 
+int single = 0, doub = 0, tmp = 0;
+
 uint8_t 
 GetClick( void ){
-  if( PINB & ( 1 << PB4 ) )
+
+  if( PINB & ( 1 << PB4 ) ){
+    hyst++;
+    if( hyst > 5 ) hyst = 5;
+    tmp = 0;
+  }else{
+    hyst--;
+    if( hyst < 0 ) hyst = 0;
+
+    tmp++;
+    
+    if( single ) { 
+      doub = 1;
+      single = 0;
+    }
+  }
+
+  if( tmp > 7 && doub == 1 ) {
+    tmp = 0;
+    doub = 0;
     return SINGLE;
-  return 2;
+  }
+  
+  if( hyst == 5 ){
+    if( doub ) return DOUBLE;
+    single = 1;
+  }
+
+  return -1;
 }
 
 /**********************
 * ----SYSTEM TICKS-----
 **********************/
+
+uint16_t 
+GetSysTicks50hz( void ) {
+  uint16_t tmp;
+  cli();
+  tmp = systicks_50hz;
+  sei();
+  return tmp;
+}
 
 uint16_t 
 GetSysTicks( void ) {
@@ -169,23 +202,6 @@ GetSysTicks( void ) {
   tmp = systicks;
   sei();
   return tmp;
-}
-
-uint16_t 
-GetSysTicksRollover( void ) {
-  uint16_t tmp;
-  cli();
-  tmp = systicks_rollover;
-  sei();
-  return tmp;
-}
-
-void 
-GetSysTicksWait( void ) {
-  cli();
-  systicks_wait.ticks = systicks_50hz;
-  systicks_wait.rollover = systicks_50hz_rollover;
-  sei();
 }
 
 /**********************
@@ -361,17 +377,19 @@ WaitSemaphore( semaphore * sem ) {
     sem->count = 0;
     sei();
     return 0;
-  } else if ( sem->count == -1 ) {
+  } else if ( sem->waiting != 0 || sem->count == -1 ) {
     sei();
     return -1;
   }
   sem->count--;
-  sem->waiting = &TCB[currentTask];
+  sem->waiting = (tcb*)&(TCB[currentTask]);
   sem->waiting->state = WAIT_SEMAPHORE;
   sei();
  
-  while( sem->count < 1 )
-    _delay_ms( 1 );
+  while( sem->count < 0 )
+    asm volatile("\t  nop\n"::);
+
+  sem->waiting = 0;
 
   return 0;
 }
@@ -382,46 +400,50 @@ ReleaseSemaphore( semaphore * sem ) {
   sem->count++;
   if( sem->waiting != 0 ) {
     sem->waiting->state = READY;
-    sem->waiting = 0;
+    //sem->waiting = 0;
   }
   sei();
-
 }
 
 /**********************
 * --------ISR----------
 **********************/
 
-ISR(TIMER0_OVF_vect/*, ISR_NAKED*/) {
-  /*if(currentTask < MAX_TASKS){
-    PushState();
+ISR(TIMER0_OVF_vect, ISR_NAKED) {
+
+  PushState();
+
+  systicks++;
+
+  if(currentTask < MAX_TASKS){
     TCB[currentTask].stackPtr = SP;
   }
 
   currentTask = (currentTask + 1) % MAX_TASKS;
 
-  while(TCB[currentTask].state != READY){
+  int tmp = currentTask;
+  int pri = HIGH_PRIORITY;
 
+  while(TCB[currentTask].state != READY && TCB[currentTask].state != pri){
     if(TCB[currentTask].state == WAIT_TICKS) {
-      if(systicks_50hz == TCB[currentTask].wait->ticks && 
-         systicks_50hz_rollover == TCB[currentTask].wait->rollover ) 
-			TCB[currentTask].state = READY;
+      if( systicks >= TCB[currentTask].wait_ticks ) 
+	TCB[currentTask].state = READY;
     }
 
     currentTask = (currentTask + 1) % MAX_TASKS;
+
+    if(tmp == currentTask) 
+    {
+      if(pri == LOW_PRIORITY) pri = IDLE_PRIORITY;
+      else pri = LOW_PRIORITY;
+    }
   }  
 
   SP = TCB[currentTask].stackPtr;
+
   PopState();
-*/
-  systicks++;
-  if(systicks == 0) systicks_rollover++;
-  if(systicks % 5 == 0) {
-    systicks_50hz++;
-    if(systicks_50hz == 0) systicks_50hz_rollover++;
-  }
-  
-  //asm volatile( "\t  reti\n"::);
+
+  asm volatile( "\t  reti\n"::);
 }
 
 /**********************
@@ -432,10 +454,8 @@ void
 InitKernel( void ) {
   currentTask = -1;
   int i;
-  for( i = 0 ; i < MAX_TASKS ; i++ ){
+  for( i = 0 ; i < MAX_TASKS ; i++ )
     TCB[i].state = INVALID;
-    TCB[i].wait = (wait *)malloc(sizeof(wait));
-  } 
 }
 
 uint8_t 
@@ -451,13 +471,13 @@ StartTask( void ( * task ) ( void ), uint16_t stackSize, uint8_t priority ) {
 
       oldstack = SP;
       SP = ( uint16_t ) ( &stacks[i] ) + STACK_SIZE;
-      
+
       asm volatile( "\t push %0\n"
 		    "\t push %1\n" 
 		    :
 		    : "r" ( ( uint8_t ) ( ( ( uint16_t ) task ) ) ),
 		    "r" ( ( uint8_t ) ( ( ( uint16_t ) task ) >> 8 ) ) );
-      
+
       PushState();
       TCB[i].stackPtr = SP;
       SP = oldstack;
@@ -475,10 +495,7 @@ StopTask( void ) {
 
 void 
 Sleep( uint16_t sysTicks ) {
-  GetSysTicksWait();
-  
-  TCB[currentTask].wait->ticks = (sysTicks % 255) + systicks_wait.ticks;
-  TCB[currentTask].wait->rollover = (sysTicks / 255) + systicks_wait.rollover;
+  TCB[currentTask].wait_ticks = sysTicks + GetSysTicks();
 
   TCB[currentTask].state = WAIT_TICKS;
 
@@ -514,42 +531,37 @@ dummy2( void ) {
           sprintf( buffer,"T2: %2d", count % 99 );
           LCD_puts( buffer, 1 );
           count = count + 1;
-          Sleep(5);
+          Sleep(50);
           ReleaseSemaphore( &lcd_sem );
         }
     }
 }
 
 void 
-dummy3( void ) {
-    uint8_t i;
-    OCR1A = 300;
-    for( i = 0;; i++ ) {
-        ICR1 = ( i % 2 ) == 0 ? 2000 : 3000;
-        Sleep(2);
-    }
-}
-
-void 
 lcdTask( void ){
-  char buffer[8];
-  sprintf( buffer, "T" );
+  int x = 0;
   for(;;){
     if( WaitSemaphore( &lcd_sem ) == 0 ) {
-      LCD_puts( buffer, 1 );
+      x = !x;
+      LCD_Colon(x);
+      Sleep( 25 );
       ReleaseSemaphore( &lcd_sem );
     }
-    _delay_ms(1000);//ms
   } 
 }
 
 void 
 melodyTask( void ){
+  char buffer[8];
   uint8_t i;
   OCR1A = 300;
   for( i = 0;; i++ ) {
     ICR1 = ( i % 2 ) == 0 ? 2000 : 3000;
-    Sleep( 500 );//ms
+    if( WaitSemaphore( &lcd_sem ) == 0 ){
+      sprintf( buffer, "%4d", OCR1A );
+      LCD_puts( buffer, 1 );
+      Sleep( 25 );
+    }
   }
 }
 
@@ -564,16 +576,14 @@ buttonTask( void ){
     }else if( click == DOUBLE ){
       asm volatile( "\t jmp 0\n" ::);
     }
-    Sleep( 1 );
+    Sleep( 2 );
   }
 }
 
 void 
 idleTask( void ){
-  for(;;){
-    //_delay_ms(1);
+  for(;;)
     asm volatile("\t  nop\n"::);
-  }
 }
 
 /**********************
@@ -585,30 +595,27 @@ int main(void) {
     char buffer[8];
 
     cli();
+    InitButtons();
     LCD_Init();
     InitTimer0( ( ( 1 << CS02 ) | ( 0 << CS01 ) | ( 1 << CS00 ) ) );
     InitSound();
-    //InitButtons();
+    CLKPR = 0x00 | (1 << CLKPCE);
+    CLKPR = 0x00;
     InitKernel();
     //StartTask( & dummy1, STACK_SIZE, HIGH_PRIORITY );
     //StartTask( & dummy2, STACK_SIZE, HIGH_PRIORITY );
     //StartTask( & dummy3, STACK_SIZE, HIGH_PRIORITY );
-    //StartTask( & idleTask, STACK_SIZE, IDLE_PRIORITY );
-    //StartTask( & buttonTask, STACK_SIZE, LOW_PRIORITY );
-    //StartTask( & lcdTask, STACK_SIZE, LOW_PRIORITY );
-	//StartTask( & melodyTask, STACK_SIZE, HIGH_PRIORITY );
+    StartTask( & idleTask, STACK_SIZE, IDLE_PRIORITY );
+    StartTask( & buttonTask, STACK_SIZE, LOW_PRIORITY );
+    StartTask( & lcdTask, STACK_SIZE, LOW_PRIORITY );
+    StartTask( & melodyTask, STACK_SIZE, HIGH_PRIORITY );
     InitSemaphore( &lcd_sem, 1 );
     sei();
-    uint16_t tmp1;
-    uint16_t tmp2;
+    
     for(;;) {
-        cli();
-        tmp1 = systicks;
-        tmp2 = systicks_50hz;
-        sei();
-        sprintf(buffer,"%2d-%2d", tmp1 % 999, tmp2 % 999);
+        sprintf(buffer,"%5d", systicks);
         LCD_puts(buffer,1);
-        _delay_ms(1000);
+        _delay_ms(8000);
     }
     return 0;   /* never reached */
 }
