@@ -63,9 +63,21 @@ enum BUTTON_CLICK {
 *  
 **********************/
 
+#define E_329 ( (uint16_t) ( 2000000UL / (329UL*2) ) )
+#define F_349 ( (uint16_t) ( 2000000UL / (349UL*2) ) )
+#define G_392 ( (uint16_t) ( 2000000UL / (392UL*2) ) )
+#define A_440 ( (uint16_t) ( 2000000UL / (440UL*2) ) )
+#define B_494 ( (uint16_t) ( 2000000UL / (494UL*2) ) )
+#define C_523 ( (uint16_t) ( 2000000UL / (523UL*2) ) )
+#define D_587 ( (uint16_t) ( 2000000UL / (587UL*2) ) )
+#define E_659 ( (uint16_t) ( 2000000UL / (659UL*2) ) )
+
 #define MAX_TASKS (8)
 #define STACK_SIZE (96)
-#define SYSTICKS_BASE (217)
+
+typedef enum { E_LOW, F, G, A, B, C, D, E_HIGH, NA } NOTE;
+NOTE twinkle[48] = { C, C, G, G, A, A, G, NA, F, F, E_LOW, E_LOW, D, D, C, NA, G, G, F, F, E_LOW, E_LOW, D, NA, G, G, F, F, E_LOW, E_LOW, D, NA, C, C, G, G, A, A, G, NA, F, F, E_LOW, E_LOW, D, D, C, NA };
+uint16_t notes[9] = { E_329, F_349, G_392, A_440, B_494, C_523, D_587, E_659, 0 };
 
 /**********************
 *  PROTOTYPES
@@ -106,11 +118,8 @@ uint16_t GetSysTicks( void );
 void GetSysTicksWait( void );
 uint8_t getClick( void );
 int InitButtons( void );
-uint8_t IncTicks( void );
-void SwitchTask( void );
 void dummy1( void );
 void dummy2( void );
-uint16_t GetSysTicks( void );
 
 /**********************
 *  VARIABLES
@@ -128,6 +137,7 @@ volatile uint16_t systicks = 0;
 volatile uint16_t systicks_50hz = 0;
 semaphore lcd_sem;
 int hyst = 0;
+int currentNote = 0;
 
 /**********************
 *  IMPLEMENTATIONS (in sections)
@@ -147,37 +157,23 @@ int hyst = 0;
 * -------BUTTON--------
 **********************/
 
-int single = 0, doub = 0, tmp = 0;
+int click = 0, checkfordouble = 0, release = 0;
 
 uint8_t 
 GetClick( void ){
 
-  if( PINB & ( 1 << PB4 ) ){
-    hyst++;
-    if( hyst > 5 ) hyst = 5;
-    tmp = 0;
-  }else{
-    hyst--;
-    if( hyst < 0 ) hyst = 0;
+  if(checkfordouble > 0)
+    checkfordouble --;
 
-    tmp++;
-    
-    if( single ) { 
-      doub = 1;
-      single = 0;
-    }
-  }
-
-  if( tmp > 7 && doub == 1 ) {
-    tmp = 0;
-    doub = 0;
+  if(checkfordouble == 1)
     return SINGLE;
-  }
-  
-  if( hyst == 5 ){
-    if( doub ) return DOUBLE;
-    single = 1;
-  }
+
+  if( ! ( PINB & ( 1 << PB4 ) ) && release ) {
+    if( checkfordouble > 0 ) return DOUBLE;
+    release = 0;
+    checkfordouble = 5;
+  } else 
+    release = 1;
 
   return -1;
 }
@@ -409,7 +405,7 @@ ReleaseSemaphore( semaphore * sem ) {
 * --------ISR----------
 **********************/
 
-ISR(TIMER0_OVF_vect, ISR_NAKED) {
+ISR(TIMER0_OVF_vect,ISR_NAKED) {
 
   PushState();
 
@@ -508,45 +504,15 @@ Sleep( uint16_t sysTicks ) {
 **********************/
 
 void 
-dummy1( void ) {
-    uint8_t count = 0;
-    char buffer[8];
-    for(;;) {
-        if( WaitSemaphore( &lcd_sem ) == 0 ){
-          sprintf( buffer,"T1: %2d", count % 99 );
-          LCD_puts( buffer, 1 );
-          count = count + 1;
-          Sleep(50);
-          ReleaseSemaphore( &lcd_sem );
-        }
-    }
-}
-
-void 
-dummy2( void ) {
-    uint8_t count = 0;
-    char buffer[8];
-    for(;;) {
-        if( WaitSemaphore( &lcd_sem ) == 0 ) {
-          sprintf( buffer,"T2: %2d", count % 99 );
-          LCD_puts( buffer, 1 );
-          count = count + 1;
-          Sleep(50);
-          ReleaseSemaphore( &lcd_sem );
-        }
-    }
-}
-
-void 
 lcdTask( void ){
   int x = 0;
   for(;;){
     if( WaitSemaphore( &lcd_sem ) == 0 ) {
       x = !x;
       LCD_Colon(x);
-      Sleep( 25 );
       ReleaseSemaphore( &lcd_sem );
     }
+    Sleep( 25 );
   } 
 }
 
@@ -556,12 +522,14 @@ melodyTask( void ){
   uint8_t i;
   OCR1A = 300;
   for( i = 0;; i++ ) {
-    ICR1 = ( i % 2 ) == 0 ? 2000 : 3000;
     if( WaitSemaphore( &lcd_sem ) == 0 ){
-      sprintf( buffer, "%4d", OCR1A );
+      currentNote = (currentNote+1) %48;
+      ICR1 = notes[twinkle[currentNote]];
+      sprintf( buffer, "%4d", ICR1 );
       LCD_puts( buffer, 1 );
-      Sleep( 25 );
+      ReleaseSemaphore( &lcd_sem );
     }
+    Sleep( 25 );
   }
 }
 
@@ -602,9 +570,6 @@ int main(void) {
     CLKPR = 0x00 | (1 << CLKPCE);
     CLKPR = 0x00;
     InitKernel();
-    //StartTask( & dummy1, STACK_SIZE, HIGH_PRIORITY );
-    //StartTask( & dummy2, STACK_SIZE, HIGH_PRIORITY );
-    //StartTask( & dummy3, STACK_SIZE, HIGH_PRIORITY );
     StartTask( & idleTask, STACK_SIZE, IDLE_PRIORITY );
     StartTask( & buttonTask, STACK_SIZE, LOW_PRIORITY );
     StartTask( & lcdTask, STACK_SIZE, LOW_PRIORITY );
@@ -613,7 +578,7 @@ int main(void) {
     sei();
     
     for(;;) {
-        sprintf(buffer,"%5d", systicks);
+        sprintf(buffer,"%2d", systicks);
         LCD_puts(buffer,1);
         _delay_ms(8000);
     }
