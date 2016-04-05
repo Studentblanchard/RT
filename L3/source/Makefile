@@ -28,7 +28,12 @@
 #
 
 # Target file name (without extension).
-TARGET = main
+#TARGET = main
+TARGET = main_d2a
+#TARGET = main_diff
+#TARGET = main_os
+#TARGET = main_osdiff
+#TARGET = main_oshort
 
 # List C source files here. (C dependencies are automatically generated.)
 SRC = $(TARGET).c 

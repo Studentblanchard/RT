@@ -33,7 +33,8 @@ int main(void) {
     uint8_t loop8;
     uint16_t byteIndex;
     uint16_t numBytes = 3431;//HARDCODED
-
+    sprintf(buffer,"1bit - D2A");
+    LCD_puts(buffer,1);
     for(byteIndex = 0 ; byteIndex < numBytes ; byteIndex ++){
 	uint8_t currByte = pgm_read_byte(&(mywavdata[byteIndex]));
 	for(loop8 = 1 ; loop8 > 0 ; loop8*=2){
