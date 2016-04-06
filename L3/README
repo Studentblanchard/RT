@@ -1,14 +1,37 @@
 Trevor Blanchard
-March 21, 2016
+April 5, 2016
 Student number 7662553
 
-Lab 3 Pre-emptive OS
+Lab 4 Wav player
 
-All functions are working properly.
+I used a python program to generate the bit strings to be used by the wav player.
 
-Single click toggles the sound and a doulbe click returns to the boot loader.
+In the folder ./bitconverter/ there is a file called bitconverter.py, you can run it by running the following line in a terminal..
 
-I created a third priority for the idle task so that it will only run if all the other tasks are waiting or blocked.
+$> python bitconverter.py
 
-I increased the clock speed to 2Mhz to help with the task switching logic.
+The program will execute and it will create 4 files.
+
+d2a.txt contains the bit string for 1 bit digital to analog conversion
+
+diff.txt contains the bit string for diffence encoding.
+
+os.txt contains the bit string for 4x oversampling, as such the file is 4 times larger than the previous two
+
+os_diff.txt contains the final bit string. For this mode I chose to combine difference encoding and oversampling. In particular for each byte we compare it to the next and the previous bytes. This leads to 4 possible outputs per sample outlined below.
+
+last <= curr <= next ? output => 0110
+last  < curr  > next ? output => 1111
+last  > curr  > next ? output => 1101
+last  > curr  < next ? output => 0000
+
+There are 4 main files, one per sampling type, change the Makefile to build whichever you want.
+
+One issue I have had is when flashing the two larger files to the butterfly sometimes an error occurs and according to what I have found out about this is that it has to do with the size of the files being flashed. The exact error was "failed to verifiy " then some byte values. This is a butterfly limitation not a programming error.
+
+
+NOTE: python version 2.7 was used, please ensure you are using the same version
+
+
+
 
